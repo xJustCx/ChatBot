@@ -1,0 +1,193 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Elevate AI - Video to Text</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            text-align: center;
+            margin: 20px;
+        }
+        #dropArea {
+            width: 80%;
+            max-width: 500px;
+            height: 150px;
+            border: 2px dashed #007BFF;
+            background-color: #f8f9fa;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            margin: 20px auto;
+            cursor: pointer;
+        }
+        #dropArea.highlight {
+            background-color: #cce5ff;
+        }
+        #fileInput {
+            display: none;
+        }
+        #videoPreview {
+            width: 80%;
+            max-width: 500px;
+            margin-top: 10px;
+            display: none;
+        }
+        textarea {
+            width: 80%;
+            height: 100px;
+            margin-top: 10px;
+            font-size: 14px;
+        }
+        button {
+            margin-top: 10px;
+            padding: 10px;
+            font-size: 16px;
+            cursor: pointer;
+        }
+    </style>
+</head>
+<body>
+
+    <h2>Elevate AI - Video to Text</h2>
+
+    <!-- Drag & Drop Area -->
+    <div id="dropArea">
+        <p>Drag & Drop Video Here or Click to Upload</p>
+        <input type="file" id="fileInput" accept="video/*">
+    </div>
+
+    <!-- Video Preview -->
+    <video id="videoPreview" controls></video>
+
+    <button onclick="processVideo()">Upload & Process</button>
+    <p id="status">Status: Waiting...</p>
+
+    <!-- Transcript Output -->
+    <h3>Transcript:</h3>
+    <textarea id="transcript" readonly></textarea>
+    <button onclick="copyText()">Copy Transcript</button>
+
+    <script>
+        const baseUrl = "https://api.elevateai.com/v1/interactions";  // Correct API Base URL
+        const apiToken = "YOUR_API_TOKEN_HERE";  // Replace with your actual API key
+
+        const dropArea = document.getElementById("dropArea");
+        const fileInput = document.getElementById("fileInput");
+        const videoPreview = document.getElementById("videoPreview");
+        let selectedFile = null;
+
+        // Drag & Drop Events
+        dropArea.addEventListener("dragover", (e) => {
+            e.preventDefault();
+            dropArea.classList.add("highlight");
+        });
+
+        dropArea.addEventListener("dragleave", () => {
+            dropArea.classList.remove("highlight");
+        });
+
+        dropArea.addEventListener("drop", (e) => {
+            e.preventDefault();
+            dropArea.classList.remove("highlight");
+            if (e.dataTransfer.files.length > 0) {
+                handleFile(e.dataTransfer.files[0]);
+            }
+        });
+
+        dropArea.addEventListener("click", () => fileInput.click());
+
+        fileInput.addEventListener("change", (e) => {
+            if (e.target.files.length > 0) {
+                handleFile(e.target.files[0]);
+            }
+        });
+
+        function handleFile(file) {
+            if (!file.type.startsWith("video/")) {
+                alert("Please upload a valid video file.");
+                return;
+            }
+            selectedFile = file;
+            videoPreview.src = URL.createObjectURL(file);
+            videoPreview.style.display = "block";
+        }
+
+        async function processVideo() {
+            if (!selectedFile) {
+                alert("Please select a video file first.");
+                return;
+            }
+
+            document.getElementById("status").innerText = "Uploading...";
+
+            try {
+                // Step 1: Declare the interaction
+                let declareResponse = await fetch(`${baseUrl}/declare`, {
+                    method: "POST",
+                    headers: {
+                        "Authorization": `Bearer ${apiToken}`,
+                        "Content-Type": "application/json"
+                    },
+                    body: JSON.stringify({
+                        language: "en-us",
+                        model: "default",
+                        accuracy: "highAccuracy"
+                    })
+                });
+                let declareData = await declareResponse.json();
+                let interactionId = declareData.id;
+
+                // Step 2: Upload Video File
+                let formData = new FormData();
+                formData.append("file", selectedFile);
+
+                let uploadResponse = await fetch(`${baseUrl}/upload/${interactionId}`, {
+                    method: "POST",
+                    headers: {
+                        "Authorization": `Bearer ${apiToken}`
+                    },
+                    body: formData
+                });
+
+                if (!uploadResponse.ok) throw new Error("Upload failed");
+
+                document.getElementById("status").innerText = "Processing...";
+
+                // Step 3: Poll for Processing Completion
+                while (true) {
+                    let statusResponse = await fetch(`${baseUrl}/status/${interactionId}`, {
+                        headers: { "Authorization": `Bearer ${apiToken}` }
+                    });
+                    let statusData = await statusResponse.json();
+
+                    if (statusData.status === "processed") break;
+                    await new Promise(r => setTimeout(r, 30000)); // Check every 30 seconds
+                }
+
+                // Step 4: Get Transcript
+                let transcriptResponse = await fetch(`${baseUrl}/transcripts/${interactionId}?full=true`, {
+                    headers: { "Authorization": `Bearer ${apiToken}` }
+                });
+                let transcripts = await transcriptResponse.text();
+
+                // Display results
+                document.getElementById("status").innerText = "Processing Complete!";
+                document.getElementById("transcript").value = transcripts;
+
+            } catch (error) {
+                document.getElementById("status").innerText = "Error: " + error.message;
+            }
+        }
+
+        function copyText() {
+            let transcriptBox = document.getElementById("transcript");
+            transcriptBox.select();
+            document.execCommand("copy");
+            alert("Transcript copied!");
+        }
+    </script>
+
+</body>
+</html>
